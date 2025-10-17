@@ -54,6 +54,7 @@ void CameraApi::SetUp(flutter::BinaryMessenger* binary_messenger,
     channel->SetMethodCallHandler([api](const MethodCall<>& methodCall,
                                         const std::unique_ptr<MethodResult<>>&
                                             result) {
+      SPDLOG_DEBUG("CameraApi: qmethod_name {}", methodCall.method_name());
       if (methodCall.method_name() == "availableCameras") {
         try {
           api->availableCameras(
