@@ -80,13 +80,16 @@ CameraContext::CameraContext(std::string cameraName,
 }
 
 CameraContext::~CameraContext() {
-  SPDLOG_DEBUG("[camera_plugin] ~CameraContext()");
+  SPDLOG_DEBUG("[camera_plugin] ~CameraContext() START");
   mCamera->release();
   mCameraState = CAM_STATE_AVAILABLE;
+  SPDLOG_DEBUG("[camera_plugin] ~CameraContext() END");
 }
 
 void CameraContext::setCamera(std::shared_ptr<libcamera::Camera> camera) {
+  SPDLOG_DEBUG("[camera_plugin] setCamera START");
   mCamera = std::move(camera);
+  SPDLOG_DEBUG("[camera_plugin] setCamera END");
 }
 
 std::string CameraContext::Initialize(
@@ -202,56 +205,69 @@ std::string CameraContext::Initialize(
 }
 
 std::optional<std::string> CameraContext::GetFilePathForPicture() {
+  SPDLOG_DEBUG("[camera_plugin] GetFilePathForPicture START");
   std::ostringstream oss;
   oss << "xdg-user-dir PICTURES";
   std::string picture_path;
   if (!Command::Execute(oss.str().c_str(), picture_path)) {
+    SPDLOG_DEBUG("[camera_plugin] GetFilePathForPicture END - nullopt");
     return std::nullopt;
   }
   std::filesystem::path path(StringTools::trim(picture_path, "\n"));
   path /= "PhotoCapture_" + TimeTools::GetCurrentTimeString() + "." +
           kPictureCaptureExtension;
+  SPDLOG_DEBUG("[camera_plugin] GetFilePathForPicture END");
   return path;
 }
 
 std::optional<std::string> CameraContext::GetFilePathForVideo() {
+  SPDLOG_DEBUG("[camera_plugin] GetFilePathForVideo START");
   std::ostringstream oss;
   oss << "xdg-user-dir VIDEOS";
   std::string video_path;
   if (!Command::Execute(oss.str().c_str(), video_path)) {
+    SPDLOG_DEBUG("[camera_plugin] GetFilePathForVideo END - nullopt");
     return std::nullopt;
   }
   std::filesystem::path path(StringTools::trim(video_path, "\n"));
   path /= "VideoCapture_" + TimeTools::GetCurrentTimeString() + "." +
           kVideoCaptureExtension;
+  SPDLOG_DEBUG("[camera_plugin] GetFilePathForVideo END");
   return path;
 }
 
 std::string CameraContext::takePicture() {
+  SPDLOG_DEBUG("[camera_plugin] takePicture START");
   if (auto filename = GetFilePathForPicture(); filename.has_value()) {
+    SPDLOG_DEBUG("[camera_plugin] takePicture END");
     return filename.value();
   }
+  SPDLOG_DEBUG("[camera_plugin] takePicture END - empty");
   return {};
 }
 
 void CameraContext::startVideoRecording(bool /* enableStream */) {
-  SPDLOG_DEBUG("[camera_plugin] startVideoRecording");
+  SPDLOG_DEBUG("[camera_plugin] startVideoRecording START");
+  SPDLOG_DEBUG("[camera_plugin] startVideoRecording END");
 }
 
 void CameraContext::pauseVideoRecording() {
-  SPDLOG_DEBUG("[camera_plugin] pauseVideoRecording");
+  SPDLOG_DEBUG("[camera_plugin] pauseVideoRecording START");
+  SPDLOG_DEBUG("[camera_plugin] pauseVideoRecording END");
 }
 
 void CameraContext::resumeVideoRecording() {
-  SPDLOG_DEBUG("[camera_plugin] resumeVideoRecording");
+  SPDLOG_DEBUG("[camera_plugin] resumeVideoRecording START");
+  SPDLOG_DEBUG("[camera_plugin] resumeVideoRecording END");
 }
 
 std::string CameraContext::stopVideoRecording() {
+  SPDLOG_DEBUG("[camera_plugin] stopVideoRecording START");
   if (auto filename = GetFilePathForVideo(); filename.has_value()) {
-    SPDLOG_DEBUG("[camera_plugin] stopVideoRecording: [{}]", filename.value());
+    SPDLOG_DEBUG("[camera_plugin] stopVideoRecording END: [{}]", filename.value());
     return filename.value();
   }
-  SPDLOG_DEBUG("[camera_plugin] stopVideoRecording: []");
+  SPDLOG_DEBUG("[camera_plugin] stopVideoRecording END: []");
   return {};
 }
 
