@@ -205,7 +205,7 @@ std::string CameraContext::Initialize(
            {flutter::EncodableValue("focusPointSupported"),
             flutter::EncodableValue(focus_point_supported)}}))));
   spdlog::debug(
-    "[camera_context] Initialize:  initialized send. sle 5sec ");
+    "[camera_context] Initialize:  initialized send. sleep 5sec ");
   sleep(5);
   mPreview.is_initialized = true;
 

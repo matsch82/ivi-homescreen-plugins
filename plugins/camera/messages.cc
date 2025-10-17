@@ -92,6 +92,7 @@ void CameraApi::SetUp(flutter::BinaryMessenger* binary_messenger,
                              output.error().details());
                 return;
               }
+              spdlog::debug("method_name initialize: success {}", output.value());
               reply->Success(EncodableValue(std::move(output).TakeValue()));
             });
       } else if (methodCall.method_name() == "takePicture") {
