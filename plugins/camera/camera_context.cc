@@ -29,7 +29,7 @@
 
 #include <plugins/common/common.h>
 
-namespace camera_plugin {
+namespace camera_context {
 
 static constexpr char kPictureCaptureExtension[] = "jpeg";
 static constexpr char kVideoCaptureExtension[] = "mp4";
@@ -51,7 +51,7 @@ CameraContext::CameraContext(std::string cameraName,
       mEnableAudio(enableAudio),
       mCamera(std::move(camera)),
       mPreview() {
-  spdlog::debug("[camera_plugin]");
+  spdlog::debug("[camera_context]");
   spdlog::debug("\tcameraName: [{}]", mCameraName);
   spdlog::debug("\tresolutionPreset: [{}]", mResolutionPreset);
   spdlog::debug("\tfps: [{}]", mFps);
@@ -64,15 +64,15 @@ CameraContext::CameraContext(std::string cameraName,
       mCameraState = CAM_STATE_ACQUIRED;
     }
   } else {
-    spdlog::error("[camera_plugin] Failed to acquire camera: {}", res);
+    spdlog::error("[camera_context] Failed to acquire camera: {}", res);
   }
 
-  spdlog::debug("[camera_plugin] Controls:");
+  spdlog::debug("[camera_context] Controls:");
   for (const auto& [id, info] : mCamera->controls()) {
     spdlog::debug("\t[{}] {}", id->name(), info.toString());
   }
 
-  spdlog::debug("[camera_plugin] Properties:");
+  spdlog::debug("[camera_context] Properties:");
   for (const auto& [key, value] : mCamera->properties()) {
     const auto* id = libcamera::properties::properties.at(key);
     spdlog::debug("\t[{}] {}", id->name(), value.toString());
@@ -80,26 +80,25 @@ CameraContext::CameraContext(std::string cameraName,
 }
 
 CameraContext::~CameraContext() {
-  SPDLOG_DEBUG("[camera_plugin] ~CameraContext() START");
+  spdlog::debug("[camera_context] ~CameraContext() START");
   mCamera->release();
   mCameraState = CAM_STATE_AVAILABLE;
-  SPDLOG_DEBUG("[camera_plugin] ~CameraContext() END");
+  spdlog::debug("[camera_context] ~CameraContext() END");
 }
 
 void CameraContext::setCamera(std::shared_ptr<libcamera::Camera> camera) {
-  SPDLOG_DEBUG("[camera_plugin] setCamera START");
+  spdlog::debug("[camera_context] setCamera START");
   mCamera = std::move(camera);
-  SPDLOG_DEBUG("[camera_plugin] setCamera END");
+  spdlog::debug("[camera_context] setCamera END");
 }
 
 std::string CameraContext::Initialize(
-  
     flutter::PluginRegistrar* plugin_registrar,
     int64_t camera_id,
     const std::string& image_format_group) {
-    SPDLOG_DEBUG("[camera_plugin] Initialize START");
+    spdlog::debug("[camera_context] Initialize START");
     if (mPreview.is_initialized) {
-      SPDLOG_DEBUG("[camera_plugin] Initialize END - already initialized");
+      spdlog::debug("[camera_context] Initialize END - already initialized");
     return {};
   }
 
@@ -115,14 +114,14 @@ std::string CameraContext::Initialize(
   mImageFormatGroup.assign(image_format_group);
 
   spdlog::debug(
-      "[camera_plugin] Initialize: cameraId: {}, imageFormatGroup: [{}]",
+      "[camera_context] Initialize: cameraId: {}, imageFormatGroup: [{}]",
       camera_id, mImageFormatGroup);
 
   mPreview.width = 640;
   mPreview.height = 480;
 
   /// Setup GL Texture 2D
-  spdlog::debug("[camera_plugin] Initialize: Setup GL Texture 2D");
+  spdlog::debug("[camera_context] Initialize: Setup GL Texture 2D");
   texture_registrar_->TextureMakeCurrent();
   glGenFramebuffers(1, &mPreview.framebuffer);
   glBindFramebuffer(GL_FRAMEBUFFER, mPreview.framebuffer);
@@ -131,7 +130,7 @@ std::string CameraContext::Initialize(
   glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
 
-  spdlog::debug("[camera_plugin] Initialize: glBindTexture");
+  spdlog::debug("[camera_context] Initialize: glBindTexture");
   glBindTexture(GL_TEXTURE_2D, mPreview.textureId);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -146,7 +145,7 @@ std::string CameraContext::Initialize(
 
   if (auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
       status != GL_FRAMEBUFFER_COMPLETE) {
-    spdlog::error("[camera_plugin] FramebufferStatus: 0x{:X}", status);
+    spdlog::error("[camera_context] FramebufferStatus: 0x{:X}", status);
   }
 
   glFinish();
@@ -154,7 +153,7 @@ std::string CameraContext::Initialize(
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
   texture_registrar_->TextureClearCurrent();
-  spdlog::debug("[camera_plugin] Initialize: mPreview.descriptor");
+  spdlog::debug("[camera_context] Initialize: mPreview.descriptor");
   mPreview.descriptor = {
       .struct_size = sizeof(FlutterDesktopGpuSurfaceDescriptor),
       .handle = &mPreview.textureId,
@@ -175,17 +174,17 @@ std::string CameraContext::Initialize(
       });
 
   flutter::TextureVariant texture = *mPreview.gpu_surface_texture;
-  spdlog::debug("[camera_plugin] Initialize: RegisterTexture");
+  spdlog::debug("[camera_context] Initialize: RegisterTexture");
   texture_registrar_->RegisterTexture(&texture);
   texture_registrar_->MarkTextureFrameAvailable(mPreview.textureId);
-  spdlog::debug("[camera_plugin] Initialize: mCamera->properties()");
+  spdlog::debug("[camera_context] Initialize: mCamera->properties()");
   auto props = mCamera->properties();
 
   const std::string exposure_mode("auto");
   constexpr bool exposure_point_supported{};
   const std::string focusMode("locked");
   bool focus_point_supported{};
-  spdlog::debug("[camera_plugin] Initialize:   camera_channel_->InvokeMethod(");
+  spdlog::debug("[camera_context] Initialize:   camera_channel_->InvokeMethod(");
   camera_channel_->InvokeMethod(
       "initialized",
       std::make_unique<flutter::EncodableValue>(
@@ -207,75 +206,75 @@ std::string CameraContext::Initialize(
 
   mPreview.is_initialized = true;
 
-  SPDLOG_DEBUG("[camera_plugin] Initialize END");
+  spdlog::debug("[camera_context] Initialize END");
   return channel_name;
 }
 
 std::optional<std::string> CameraContext::GetFilePathForPicture() {
-  SPDLOG_DEBUG("[camera_plugin] GetFilePathForPicture START");
+  spdlog::debug("[camera_context] GetFilePathForPicture START");
   std::ostringstream oss;
   oss << "xdg-user-dir PICTURES";
   std::string picture_path;
   if (!Command::Execute(oss.str().c_str(), picture_path)) {
-    SPDLOG_DEBUG("[camera_plugin] GetFilePathForPicture END - nullopt");
+    spdlog::debug("[camera_context] GetFilePathForPicture END - nullopt");
     return std::nullopt;
   }
   std::filesystem::path path(StringTools::trim(picture_path, "\n"));
   path /= "PhotoCapture_" + TimeTools::GetCurrentTimeString() + "." +
           kPictureCaptureExtension;
-  SPDLOG_DEBUG("[camera_plugin] GetFilePathForPicture END");
+  spdlog::debug("[camera_context] GetFilePathForPicture END");
   return path;
 }
 
 std::optional<std::string> CameraContext::GetFilePathForVideo() {
-  SPDLOG_DEBUG("[camera_plugin] GetFilePathForVideo START");
+  spdlog::debug("[camera_context] GetFilePathForVideo START");
   std::ostringstream oss;
   oss << "xdg-user-dir VIDEOS";
   std::string video_path;
   if (!Command::Execute(oss.str().c_str(), video_path)) {
-    SPDLOG_DEBUG("[camera_plugin] GetFilePathForVideo END - nullopt");
+    spdlog::debug("[camera_context] GetFilePathForVideo END - nullopt");
     return std::nullopt;
   }
   std::filesystem::path path(StringTools::trim(video_path, "\n"));
   path /= "VideoCapture_" + TimeTools::GetCurrentTimeString() + "." +
           kVideoCaptureExtension;
-  SPDLOG_DEBUG("[camera_plugin] GetFilePathForVideo END");
+  spdlog::debug("[camera_context] GetFilePathForVideo END");
   return path;
 }
 
 std::string CameraContext::takePicture() {
-  SPDLOG_DEBUG("[camera_plugin] takePicture START");
+  spdlog::debug("[camera_context] takePicture START");
   if (auto filename = GetFilePathForPicture(); filename.has_value()) {
-    SPDLOG_DEBUG("[camera_plugin] takePicture END");
+    spdlog::debug("[camera_context] takePicture END");
     return filename.value();
   }
-  SPDLOG_DEBUG("[camera_plugin] takePicture END - empty");
+  spdlog::debug("[camera_context] takePicture END - empty");
   return {};
 }
 
 void CameraContext::startVideoRecording(bool /* enableStream */) {
-  SPDLOG_DEBUG("[camera_plugin] startVideoRecording START");
-  SPDLOG_DEBUG("[camera_plugin] startVideoRecording END");
+  spdlog::debug("[camera_context] startVideoRecording START");
+  spdlog::debug("[camera_context] startVideoRecording END");
 }
 
 void CameraContext::pauseVideoRecording() {
-  SPDLOG_DEBUG("[camera_plugin] pauseVideoRecording START");
-  SPDLOG_DEBUG("[camera_plugin] pauseVideoRecording END");
+  spdlog::debug("[camera_context] pauseVideoRecording START");
+  spdlog::debug("[camera_context] pauseVideoRecording END");
 }
 
 void CameraContext::resumeVideoRecording() {
-  SPDLOG_DEBUG("[camera_plugin] resumeVideoRecording START");
-  SPDLOG_DEBUG("[camera_plugin] resumeVideoRecording END");
+  spdlog::debug("[camera_context] resumeVideoRecording START");
+  spdlog::debug("[camera_context] resumeVideoRecording END");
 }
 
 std::string CameraContext::stopVideoRecording() {
-  SPDLOG_DEBUG("[camera_plugin] stopVideoRecording START");
+  spdlog::debug("[camera_context] stopVideoRecording START");
   if (auto filename = GetFilePathForVideo(); filename.has_value()) {
-    SPDLOG_DEBUG("[camera_plugin] stopVideoRecording END: [{}]", filename.value());
+    spdlog::debug("[camera_context] stopVideoRecording END: [{}]", filename.value());
     return filename.value();
   }
-  SPDLOG_DEBUG("[camera_plugin] stopVideoRecording END: []");
+  spdlog::debug("[camera_context] stopVideoRecording END: []");
   return {};
 }
 
-}  // namespace camera_plugin
+}  // namespace camera_context

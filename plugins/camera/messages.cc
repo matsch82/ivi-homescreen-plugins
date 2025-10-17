@@ -24,6 +24,7 @@
 #include <flutter/method_call.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
+#include <spdlog/spdlog.h>
 
 #include <optional>
 
@@ -54,7 +55,7 @@ void CameraApi::SetUp(flutter::BinaryMessenger* binary_messenger,
     channel->SetMethodCallHandler([api](const MethodCall<>& methodCall,
                                         const std::unique_ptr<MethodResult<>>&
                                             result) {
-      SPDLOG_DEBUG("CameraApi: qmethod_name {}", methodCall.method_name());
+      spdlog::debu("CameraApi: method_name {}", methodCall.method_name());
       if (methodCall.method_name() == "availableCameras") {
         try {
           api->availableCameras(
