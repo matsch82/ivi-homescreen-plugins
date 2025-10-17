@@ -217,6 +217,7 @@ void CameraPlugin::initialize(
     camera->setCamera(g_camera_manager->get(id));
     const auto channel_name =
         camera->Initialize(registrar_, cameraId, imageFormatGroup);
+    spdlog::debug("[CameraPlugin::initialize] channel_name: {}", channel_name);
     result(ErrorOr(channel_name));
   }
   spdlog::debug("[CameraPlugin::initialize] end");
