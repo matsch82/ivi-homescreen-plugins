@@ -93,10 +93,13 @@ void CameraContext::setCamera(std::shared_ptr<libcamera::Camera> camera) {
 }
 
 std::string CameraContext::Initialize(
+  
     flutter::PluginRegistrar* plugin_registrar,
     int64_t camera_id,
     const std::string& image_format_group) {
-  if (mPreview.is_initialized) {
+    SPDLOG_DEBUG("[camera_plugin] Initialize START");
+    if (mPreview.is_initialized) {
+      SPDLOG_DEBUG("[camera_plugin] Initialize END - already initialized");
     return {};
   }
 
@@ -119,6 +122,7 @@ std::string CameraContext::Initialize(
   mPreview.height = 480;
 
   /// Setup GL Texture 2D
+  spdlog::debug("[camera_plugin] Initialize: Setup GL Texture 2D");
   texture_registrar_->TextureMakeCurrent();
   glGenFramebuffers(1, &mPreview.framebuffer);
   glBindFramebuffer(GL_FRAMEBUFFER, mPreview.framebuffer);
@@ -127,6 +131,7 @@ std::string CameraContext::Initialize(
   glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
 
+  spdlog::debug("[camera_plugin] Initialize: glBindTexture");
   glBindTexture(GL_TEXTURE_2D, mPreview.textureId);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -149,7 +154,7 @@ std::string CameraContext::Initialize(
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
   texture_registrar_->TextureClearCurrent();
-
+  spdlog::debug("[camera_plugin] Initialize: mPreview.descriptor");
   mPreview.descriptor = {
       .struct_size = sizeof(FlutterDesktopGpuSurfaceDescriptor),
       .handle = &mPreview.textureId,
@@ -170,16 +175,17 @@ std::string CameraContext::Initialize(
       });
 
   flutter::TextureVariant texture = *mPreview.gpu_surface_texture;
+  spdlog::debug("[camera_plugin] Initialize: RegisterTexture");
   texture_registrar_->RegisterTexture(&texture);
   texture_registrar_->MarkTextureFrameAvailable(mPreview.textureId);
-
+  spdlog::debug("[camera_plugin] Initialize: mCamera->properties()");
   auto props = mCamera->properties();
 
   const std::string exposure_mode("auto");
   constexpr bool exposure_point_supported{};
   const std::string focusMode("locked");
   bool focus_point_supported{};
-
+  spdlog::debug("[camera_plugin] Initialize:   camera_channel_->InvokeMethod(");
   camera_channel_->InvokeMethod(
       "initialized",
       std::make_unique<flutter::EncodableValue>(
@@ -201,6 +207,7 @@ std::string CameraContext::Initialize(
 
   mPreview.is_initialized = true;
 
+  SPDLOG_DEBUG("[camera_plugin] Initialize END");
   return channel_name;
 }
 
