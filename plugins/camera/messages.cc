@@ -87,7 +87,7 @@ void CameraApi::SetUp(flutter::BinaryMessenger* binary_messenger,
             *args, [reply = result.get()](ErrorOr<std::string>&& output) {
 
               if (output.has_error()) {
-                SPDLOG_INFO("method_name initialize: error {}", output.error().details());
+                spdlog::debug("method_name initialize: error {}", output.error().message());
                 reply->Error(output.error().code(), output.error().message(),
                              output.error().details());
                 return;
