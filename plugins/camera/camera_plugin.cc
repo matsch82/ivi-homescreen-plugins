@@ -117,6 +117,7 @@ std::string CameraPlugin::get_camera_lens_facing(
 
 void CameraPlugin::availableCameras(
     const std::function<void(ErrorOr<flutter::EncodableList> reply)> result) {
+  spdlog::debug("[CameraPlugin::availableCameras] start");
   spdlog::debug("[camera_plugin] availableCameras:");
 
   const auto cameras = g_camera_manager->cameras();
@@ -137,11 +138,13 @@ void CameraPlugin::availableCameras(
                                flutter::EncodableValue(sensorOrientation)}});
   }
   result(ErrorOr(list));
+  spdlog::debug("[CameraPlugin::availableCameras] end");
 }
 
 void CameraPlugin::create(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<flutter::EncodableMap> reply)> result) {
+  spdlog::debug("[CameraPlugin::create] start");
   spdlog::debug("[camera_plugin] create:");
   Encodable::PrintFlutterEncodableMap("create", args);
 
@@ -180,11 +183,13 @@ void CameraPlugin::create(
   map[flutter::EncodableValue("cameraId")] =
       static_cast<int64_t>(g_cameras.size());
   result(ErrorOr(map));
+  spdlog::debug("[CameraPlugin::create] end");
 }
 
 void CameraPlugin::initialize(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<std::string> reply)> result) {
+  spdlog::debug("[CameraPlugin::initialize] start");
   // method arguments
   int32_t cameraId = 0;
   std::string imageFormatGroup;
@@ -214,11 +219,13 @@ void CameraPlugin::initialize(
         camera->Initialize(registrar_, cameraId, imageFormatGroup);
     result(ErrorOr(channel_name));
   }
+  spdlog::debug("[CameraPlugin::initialize] end");
 }
 
 void CameraPlugin::takePicture(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<std::string> reply)> result) {
+  spdlog::debug("[CameraPlugin::takePicture] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -230,11 +237,13 @@ void CameraPlugin::takePicture(
   }
 
   result(ErrorOr(CameraContext::takePicture()));
+  spdlog::debug("[CameraPlugin::takePicture] end");
 }
 
 void CameraPlugin::startVideoRecording(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::startVideoRecording] start");
   Encodable::PrintFlutterEncodableMap("startVideoRecording", args);
   // method arguments
   int32_t cameraId = 0;
@@ -258,6 +267,7 @@ void CameraPlugin::startVideoRecording(
 void CameraPlugin::pauseVideoRecording(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::pauseVideoRecording] start");
   Encodable::PrintFlutterEncodableMap("pauseVideoRecording", args);
   // method arguments
   int32_t cameraId = 0;
@@ -273,11 +283,13 @@ void CameraPlugin::pauseVideoRecording(
   camera->pauseVideoRecording();
 
   result(std::nullopt);
+  spdlog::debug("[CameraPlugin::pauseVideoRecording] end");
 }
 
 void CameraPlugin::resumeVideoRecording(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::resumeVideoRecording] start");
   Encodable::PrintFlutterEncodableMap("resumeVideoRecording", args);
   // method arguments
   int32_t cameraId = 0;
@@ -298,6 +310,7 @@ void CameraPlugin::resumeVideoRecording(
 void CameraPlugin::stopVideoRecording(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<std::string> reply)> result) {
+  spdlog::debug("[CameraPlugin::stopVideoRecording] start");
   Encodable::PrintFlutterEncodableMap("stopVideoRecording", args);
   // method arguments
   int32_t cameraId = 0;
@@ -311,11 +324,13 @@ void CameraPlugin::stopVideoRecording(
 
   const auto& camera = g_cameras[static_cast<unsigned long>(cameraId - 1)];
   result(ErrorOr(camera->stopVideoRecording()));
+  spdlog::debug("[CameraPlugin::stopVideoRecording] end");
 }
 
 void CameraPlugin::pausePreview(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::pausePreview] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -329,11 +344,13 @@ void CameraPlugin::pausePreview(
 
   SPDLOG_DEBUG("[camera_plugin] pausePreview: camera_id: {}", cameraId);
   result(ErrorOr<double>(1));
+  spdlog::debug("[CameraPlugin::pausePreview] end");
 }
 
 void CameraPlugin::resumePreview(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::resumePreview] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -346,11 +363,13 @@ void CameraPlugin::resumePreview(
 
   SPDLOG_DEBUG("[camera_plugin] resumePreview: camera_id: {}", cameraId);
   result(ErrorOr<double>(cameraId));
+  spdlog::debug("[CameraPlugin::resumePreview] end");
 }
 
 void CameraPlugin::lockCaptureOrientation(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<std::string>)> result) {
+  spdlog::debug("[CameraPlugin::lockCaptureOrientation] start");
   // method arguments
   int32_t cameraId = 0;
   std::string orientation;
@@ -369,11 +388,13 @@ void CameraPlugin::lockCaptureOrientation(
       "[camera_plugin] lockCaptureOrientation: camera_id: {}, orientation: {}",
       cameraId, orientation);
   result(ErrorOr(orientation));
+  spdlog::debug("[CameraPlugin::lockCaptureOrientation] end");
 }
 
 void CameraPlugin::unlockCaptureOrientation(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<std::string>)> result) {
+  spdlog::debug("[CameraPlugin::unlockCaptureOrientation] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -388,11 +409,13 @@ void CameraPlugin::unlockCaptureOrientation(
                cameraId);
   const std::string res;
   result(ErrorOr(res));
+  spdlog::debug("[CameraPlugin::unlockCaptureOrientation] end");
 }
 
 void CameraPlugin::setFlashMode(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::setFlashMode] start");
   // method arguments
   int32_t cameraId = 0;
   std::string mode;
@@ -416,6 +439,7 @@ void CameraPlugin::setFlashMode(
 void CameraPlugin::setFocusMode(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::setFocusMode] start");
   // method arguments
   int32_t cameraId = 0;
   std::string mode;
@@ -439,6 +463,7 @@ void CameraPlugin::setFocusMode(
 void CameraPlugin::setExposureMode(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::setExposureMode] start");
   Encodable::PrintFlutterEncodableMap("setExposureMode", args);
 
   result(std::nullopt);
@@ -447,6 +472,7 @@ void CameraPlugin::setExposureMode(
 void CameraPlugin::setExposurePoint(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::setExposurePoint] start");
   Encodable::PrintFlutterEncodableMap("setExposurePoint", args);
 
   result(std::nullopt);
@@ -455,6 +481,7 @@ void CameraPlugin::setExposurePoint(
 void CameraPlugin::setFocusPoint(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::setFocusPoint] start");
   Encodable::PrintFlutterEncodableMap("setFocusPoint", args);
   result(std::nullopt);
 }
@@ -462,6 +489,7 @@ void CameraPlugin::setFocusPoint(
 void CameraPlugin::setExposureOffset(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::setExposureOffset] start");
   // method arguments
   int32_t cameraId = 0;
   double offset;
@@ -478,11 +506,13 @@ void CameraPlugin::setExposureOffset(
   SPDLOG_DEBUG("[camera_plugin] setExposureOffset: camera_id: {}, offset: {}",
                cameraId, offset);
   result(ErrorOr(offset));
+  spdlog::debug("[CameraPlugin::setExposureOffset] end");
 }
 
 void CameraPlugin::getExposureOffsetStepSize(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::getExposureOffsetStepSize] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -497,11 +527,13 @@ void CameraPlugin::getExposureOffsetStepSize(
                cameraId);
 
   result(ErrorOr<double>(2));
+  spdlog::debug("[CameraPlugin::getExposureOffsetStepSize] end");
 }
 
 void CameraPlugin::getMinExposureOffset(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::getMinExposureOffset] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -514,11 +546,14 @@ void CameraPlugin::getMinExposureOffset(
   (void)cameraId;
   SPDLOG_DEBUG("[camera_plugin] getMinExposureOffset: camera_id: {}", cameraId);
   result(ErrorOr<double>(0));
+  spdlog::debug("[CameraPlugin::getMinExposureOffset] end");
+  spdlog::debug("[CameraPlugin::getMinZoomLevel] end");
 }
 
 void CameraPlugin::getMaxExposureOffset(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::getMaxExposureOffset] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -531,11 +566,13 @@ void CameraPlugin::getMaxExposureOffset(
   (void)cameraId;
   SPDLOG_DEBUG("[camera_plugin] getMaxExposureOffset: camera_id: {}", cameraId);
   result(ErrorOr<double>(64));
+  spdlog::debug("[CameraPlugin::getMaxExposureOffset] end");
 }
 
 void CameraPlugin::getMaxZoomLevel(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::getMaxZoomLevel] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -548,11 +585,13 @@ void CameraPlugin::getMaxZoomLevel(
   (void)cameraId;
   SPDLOG_DEBUG("[camera_plugin] getMaxZoomLevel: camera_id: {}", cameraId);
   result(ErrorOr<double>(32));
+  spdlog::debug("[CameraPlugin::getMaxZoomLevel] end");
 }
 
 void CameraPlugin::getMinZoomLevel(
     const flutter::EncodableMap& args,
     const std::function<void(ErrorOr<double> reply)> result) {
+  spdlog::debug("[CameraPlugin::getMinZoomLevel] start");
   // method arguments
   int32_t cameraId = 0;
 
@@ -571,6 +610,7 @@ void CameraPlugin::getMinZoomLevel(
 void CameraPlugin::dispose(
     const flutter::EncodableMap& args,
     const std::function<void(std::optional<FlutterError> reply)> result) {
+  spdlog::debug("[CameraPlugin::dispose] start");
   // method arguments
   int32_t cameraId = 0;
 
