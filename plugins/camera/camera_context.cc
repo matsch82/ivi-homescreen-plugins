@@ -30,7 +30,6 @@
 #include <plugins/common/common.h>
 
 namespace camera_plugin {
-
 static constexpr char kPictureCaptureExtension[] = "jpeg";
 static constexpr char kVideoCaptureExtension[] = "mp4";
 
@@ -43,15 +42,16 @@ CameraContext::CameraContext(std::string cameraName,
                              const int64_t audioBitrate,
                              const bool enableAudio,
                              std::shared_ptr<libcamera::Camera> camera)
-    : mCameraName(std::move(cameraName)),
-      mResolutionPreset(std::move(resolutionPreset)),
-      mFps(fps),
-      mVideoBitrate(videoBitrate),
-      mAudioBitrate(audioBitrate),
-      mEnableAudio(enableAudio),
-      mCamera(std::move(camera)),
-      mPreview() {
+  : mCameraName(std::move(cameraName)),
+    mResolutionPreset(std::move(resolutionPreset)),
+    mFps(fps),
+    mVideoBitrate(videoBitrate),
+    mAudioBitrate(audioBitrate),
+    mEnableAudio(enableAudio),
+    mCamera(std::move(camera)),
+    mPreview() {
   spdlog::debug("[camera_context]");
+  spdlog::debug("\tcameraId: [{}]", camera_id_);
   spdlog::debug("\tcameraName: [{}]", mCameraName);
   spdlog::debug("\tresolutionPreset: [{}]", mResolutionPreset);
   spdlog::debug("\tfps: [{}]", mFps);
@@ -96,9 +96,9 @@ std::string CameraContext::Initialize(
     flutter::PluginRegistrar* plugin_registrar,
     int64_t camera_id,
     const std::string& image_format_group) {
-    spdlog::debug("[camera_context] Initialize START");
-    if (mPreview.is_initialized) {
-      spdlog::debug("[camera_context] Initialize END - already initialized");
+  spdlog::debug("[camera_context] Initialize START");
+  if (mPreview.is_initialized) {
+    spdlog::debug("[camera_context] Initialize END - already initialized");
     return {};
   }
 
@@ -144,7 +144,7 @@ std::string CameraContext::Initialize(
                          mPreview.textureId, 0);
 
   if (auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-      status != GL_FRAMEBUFFER_COMPLETE) {
+    status != GL_FRAMEBUFFER_COMPLETE) {
     spdlog::error("[camera_context] FramebufferStatus: 0x{:X}", status);
   }
 
@@ -184,26 +184,29 @@ std::string CameraContext::Initialize(
   constexpr bool exposure_point_supported{};
   const std::string focusMode("locked");
   bool focus_point_supported{};
-  spdlog::debug("[camera_context] Initialize:   camera_channel_->InvokeMethod(");
+  spdlog::debug(
+      "[camera_context] Initialize:   camera_channel_->InvokeMethod(");
   camera_channel_->InvokeMethod(
       "initialized",
       std::make_unique<flutter::EncodableValue>(
           flutter::EncodableValue(flutter::EncodableMap(
-              {{flutter::EncodableValue("cameraId"),
-                flutter::EncodableValue(camera_id)},
-               {flutter::EncodableValue("previewWidth"),
-                flutter::EncodableValue(static_cast<double>(mPreview.width))},
-               {flutter::EncodableValue("previewHeight"),
-                flutter::EncodableValue(static_cast<double>(mPreview.height))},
-               {flutter::EncodableValue("exposureMode"),
-                flutter::EncodableValue(exposure_mode.c_str())},
-               {flutter::EncodableValue("exposurePointSupported"),
-                flutter::EncodableValue(exposure_point_supported)},
-               {flutter::EncodableValue("focusMode"),
-                flutter::EncodableValue(focusMode.c_str())},
-               {flutter::EncodableValue("focusPointSupported"),
-                flutter::EncodableValue(focus_point_supported)}}))));
-
+          {{flutter::EncodableValue("cameraId"),
+            flutter::EncodableValue(camera_id)},
+           {flutter::EncodableValue("previewWidth"),
+            flutter::EncodableValue(static_cast<double>(mPreview.width))},
+           {flutter::EncodableValue("previewHeight"),
+            flutter::EncodableValue(static_cast<double>(mPreview.height))},
+           {flutter::EncodableValue("exposureMode"),
+            flutter::EncodableValue(exposure_mode.c_str())},
+           {flutter::EncodableValue("exposurePointSupported"),
+            flutter::EncodableValue(exposure_point_supported)},
+           {flutter::EncodableValue("focusMode"),
+            flutter::EncodableValue(focusMode.c_str())},
+           {flutter::EncodableValue("focusPointSupported"),
+            flutter::EncodableValue(focus_point_supported)}}))));
+  spdlog::debug(
+    "[camera_context] Initialize:  initialized send. sle 5sec ");
+  sleep(5);
   mPreview.is_initialized = true;
 
   spdlog::debug("[camera_context] Initialize END");
@@ -221,7 +224,7 @@ std::optional<std::string> CameraContext::GetFilePathForPicture() {
   }
   std::filesystem::path path(StringTools::trim(picture_path, "\n"));
   path /= "PhotoCapture_" + TimeTools::GetCurrentTimeString() + "." +
-          kPictureCaptureExtension;
+      kPictureCaptureExtension;
   spdlog::debug("[camera_context] GetFilePathForPicture END");
   return path;
 }
@@ -237,7 +240,7 @@ std::optional<std::string> CameraContext::GetFilePathForVideo() {
   }
   std::filesystem::path path(StringTools::trim(video_path, "\n"));
   path /= "VideoCapture_" + TimeTools::GetCurrentTimeString() + "." +
-          kVideoCaptureExtension;
+      kVideoCaptureExtension;
   spdlog::debug("[camera_context] GetFilePathForVideo END");
   return path;
 }
@@ -270,11 +273,11 @@ void CameraContext::resumeVideoRecording() {
 std::string CameraContext::stopVideoRecording() {
   spdlog::debug("[camera_context] stopVideoRecording START");
   if (auto filename = GetFilePathForVideo(); filename.has_value()) {
-    spdlog::debug("[camera_context] stopVideoRecording END: [{}]", filename.value());
+    spdlog::debug("[camera_context] stopVideoRecording END: [{}]",
+                  filename.value());
     return filename.value();
   }
   spdlog::debug("[camera_context] stopVideoRecording END: []");
   return {};
 }
-
-}  // namespace camera_plugin
+} // namespace camera_plugin
