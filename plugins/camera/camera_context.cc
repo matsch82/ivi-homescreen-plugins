@@ -29,7 +29,7 @@
 
 #include <plugins/common/common.h>
 
-namespace camera_context {
+namespace camera_plugin {
 
 static constexpr char kPictureCaptureExtension[] = "jpeg";
 static constexpr char kVideoCaptureExtension[] = "mp4";
@@ -277,4 +277,4 @@ std::string CameraContext::stopVideoRecording() {
   return {};
 }
 
-}  // namespace camera_context
+}  // namespace camera_plugin
