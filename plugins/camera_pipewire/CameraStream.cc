@@ -268,6 +268,7 @@ bool CameraStream::Start(const std::string& camera_id) {
     static pw_stream_events streamEvents{};
     streamEvents.version = PW_VERSION_STREAM_EVENTS;
     streamEvents.state_changed = OnStreamStateChanged;
+    streamEvents.param_changed = OnStreamParamChanged;
     streamEvents.process = OnStreamProcess;
 
     pw_stream_add_listener(pw_stream_, &stream_listener_, &streamEvents, this);
@@ -276,13 +277,18 @@ bool CameraStream::Start(const std::string& camera_id) {
     // building an SPA_POD with resolution, etc. This is just a stub:
 
     // Build the SPA format param
+    // Build the SPA format param
     std::vector<uint8_t> pod_buffer(1024);
-    spa_pod_builder builder = ((struct spa_pod_builder){
-        (pod_buffer.data()),
-        (static_cast<unsigned int>(pod_buffer.size())),
-        0,
-        {},
-        {}});
+    spa_pod_builder builder = SPA_POD_BUILDER_INIT(pod_buffer.data(), pod_buffer.size());
+
+    // Verify builder initialization
+    if (builder.data == nullptr || builder.size == 0) {
+      spdlog::error("[CameraStream] failed to initialize spa_pod_builder");
+      pw_stream_destroy(pw_stream_);
+      pw_stream_ = nullptr;
+      pw_thread_loop_unlock(loop);
+      return false;
+    }
     spa_rectangle rect = {static_cast<uint32_t>(width_),
                           static_cast<uint32_t>(height_)};
     spa_fraction fps = {30, 1};
@@ -318,6 +324,14 @@ bool CameraStream::Start(const std::string& camera_id) {
           SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_mjpg),
           SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&rect),
           SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&fps)));
+
+      if (!params[0] || builder.state.offset > pod_buffer.size()) {
+        spdlog::error("[CameraStream] failed to build MJPEG format parameters (buffer overflow)");
+        pw_stream_destroy(pw_stream_);
+        pw_stream_ = nullptr;
+        pw_thread_loop_unlock(loop);
+        return false;
+      }
     } else if (camera_output_format == "YUV2") {
       params[0] = static_cast<const spa_pod*>(spa_pod_builder_add_object(
           &builder, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
@@ -326,6 +340,14 @@ bool CameraStream::Start(const std::string& camera_id) {
           SPA_FORMAT_VIDEO_format, SPA_POD_Id(SPA_VIDEO_FORMAT_YUY2),
           SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&rect),
           SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&fps)));
+
+      if (!params[0] || builder.state.offset > pod_buffer.size()) {
+        spdlog::error("[CameraStream] failed to build YUV2 format parameters (buffer overflow)");
+        pw_stream_destroy(pw_stream_);
+        pw_stream_ = nullptr;
+        pw_thread_loop_unlock(loop);
+        return false;
+      }
     }
 
     // Actually connect the stream
@@ -504,6 +526,13 @@ const char* StreamStateToString(enum pw_stream_state state) {
   }
 }
 
+static void OnStreamParamChanged(void* data, uint32_t id, const struct spa_pod* param) {
+  spdlog::debug("[CameraStream] param_changed: id={}", id);
+  if (param && id == SPA_PARAM_Format) {
+    spdlog::debug("[CameraStream] Format negotiated successfully");
+  }
+}
+
 void CameraStream::OnStreamStateChanged(void* /*data*/,
     pw_stream_state old_state,
     pw_stream_state new_state,
@@ -511,6 +540,26 @@ void CameraStream::OnStreamStateChanged(void* /*data*/,
   spdlog::debug("[CameraStream.cc:OnStreamStateChanged] Stream state changed callback");
   spdlog::debug("[CameraStream] stream state changed from {} to {}",
                 StreamStateToString(old_state), StreamStateToString(new_state));
+
+}
+void CameraStream::OnStreamParamChanged(void* data,
+                                        uint32_t id,
+                                        const spa_pod* param) {
+  spdlog::debug(
+      "[CameraStream.cc:OnStreamParamChanged] Stream param changed callback");
+  spdlog::debug("[CameraStream] param_changed: id={}", id);
+  if (param && id == SPA_PARAM_Format) {
+    uint32_t media_type;
+    uint32_t media_subtype;
+    spa_format_video_raw_parse(param, nullptr);
+    if (spa_pod_parse_object(param, SPA_TYPE_OBJECT_Format, nullptr,
+                             SPA_FORMAT_mediaType, SPA_POD_Id(&media_type),
+                             SPA_FORMAT_mediaSubtype,
+                             SPA_POD_Id(&media_subtype)) >= 0) {
+      spdlog::debug("[CameraStream] media_type:{}, media_subtype:{}",
+                    media_type, media_subtype);
+    }
+  }
 }
 
 void CameraStream::OnStreamProcess(void* data) {
