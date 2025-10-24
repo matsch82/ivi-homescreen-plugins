@@ -99,8 +99,8 @@ class CameraStream {
   std::atomic<bool> new_frame_available_{false};
 
   // Dimensions
-  int width_ = 640;
-  int height_ = 480;
+  int width_ = 2304;
+  int height_ = 1296;
 
   // Private methods
   void HandleProcess();

@@ -308,7 +308,7 @@ bool CameraStream::Start(const std::string& camera_id) {
       camera_output_format = "YUV2";
     }
 
-    printf("[CameraStream] camera_output_format is set to {}",
+    spdlog::debug("[CameraStream] camera_output_format is set to {}",
                   camera_output_format);
 
     if (camera_output_format == "MJPEG") {
