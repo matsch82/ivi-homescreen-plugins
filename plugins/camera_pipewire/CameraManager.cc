@@ -87,22 +87,27 @@ bool CameraManager::initialize() {
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (initialized_) {
+    spdlog::debug("already initialized");
     // Already initialized
     return true;
   }
 
   // 1) Initialize PipeWire library (safe to call once)
+  spdlog::debug("[CameraManager] initialize pipewire");
   pw_init(nullptr, nullptr);
 
   // 2) Create main loop, context, and core
+  spdlog::debug("[CameraManager] creatre main loop");
   pw_thread_loop_ = pw_thread_loop_new("camera-loop", nullptr);
   if (!pw_thread_loop_) {
     spdlog::error("[CameraManager] failed to create pw_main_loop.");
     return false;
   }
 
+
   // 3) Start the loop in its own thread
   int ret = pw_thread_loop_start(pw_thread_loop_);
+
   if (ret != 0) {
     spdlog::error("[CameraManager] failed to start pw_thread_loop (err={})",
                   ret);
@@ -112,41 +117,51 @@ bool CameraManager::initialize() {
   }
 
   // 4) Lock the loop for context/core creation
+  spdlog::debug("[CameraManager] Calling pw_thread_loop_lock");
   pw_thread_loop_lock(pw_thread_loop_);
   {
     // We get the underlying spa_loop from the thread loop
+    spdlog::debug("[CameraManager] Calling pw_thread_loop_get_loop");
     if (auto* loop = pw_thread_loop_get_loop(pw_thread_loop_); !loop) {
       spdlog::error("[CameraManager] could not get loop from threadLoop.");
     } else {
       // Create PipeWire context
+      spdlog::debug("[CameraManager] Calling pw_context_new");
       pw_context_ = pw_context_new(loop, nullptr, 0);
       if (!pw_context_) {
         spdlog::error("[CameraManager] failed to create pw_context.");
       } else {
         // Connect to PipeWire core
+        spdlog::debug("[CameraManager] Calling pw_context_connect");
         pw_core_ = pw_context_connect(pw_context_, nullptr, 0);
         if (!pw_core_) {
           spdlog::error("[CameraManager] could not connect to PipeWire core.");
         }
+        spdlog::debug("[CameraManager] Calling pw_core_get_registry");
         pw_registry_ = pw_core_get_registry(pw_core_, PW_VERSION_REGISTRY, 0);
         static pw_registry_events registry_events = {
             .version = PW_VERSION_REGISTRY_EVENTS,
             .global = on_global,
             .global_remove = on_global_remove,
         };
+        spdlog::debug("[CameraManager] Calling pw_registry_add_listener");
         pw_registry_add_listener(pw_registry_, new spa_hook{}, &registry_events,
                                  this);
       }
     }
   }
+  spdlog::debug("[CameraManager] Calling pw_thread_loop_unlock");
   pw_thread_loop_unlock(pw_thread_loop_);
 
   // Check we have context & core
   if (!pw_context_ || !pw_core_) {
     // Something failed
+    spdlog::debug("[CameraManager] Calling pw_thread_loop_stop");
     pw_thread_loop_stop(pw_thread_loop_);
+    spdlog::debug("[CameraManager] Calling pw_thread_loop_destroy");
     pw_thread_loop_destroy(pw_thread_loop_);
     pw_thread_loop_ = nullptr;
+    spdlog::debug("[CameraManager] Calling pw_deinit");
     pw_deinit();
     return false;
   }
