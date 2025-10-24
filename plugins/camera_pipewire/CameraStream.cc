@@ -20,11 +20,17 @@
 #include <spa/param/format-utils.h>
 #include <spa/param/format.h>
 #include <spa/param/video/raw-utils.h>
+#include <spa/param/video/mjpg-utils.h>
+#include <spa/param/video/h264-utils.h>
 #include <spa/param/video/raw.h>
 #include <spa/pod/builder.h>
 #include <spdlog/spdlog.h>
 #include <string/string_tools.h>
 #include <time/time_tools.h>
+#include <spa/debug/format.h>
+#include <spa/debug/pod.h>
+#include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -133,6 +139,82 @@ static int decode_yuy2(const uint8_t* input,
 }
 //------------------------------------------------------------------------------
 // Constructor
+
+//------------------------------------------------------------------------------
+// Helper function to dump camera format capabilities
+//------------------------------------------------------------------------------
+static void dump_format_info(const struct spa_pod* param, int index) {
+  if (!param) return;
+  
+  spdlog::info("---------- Format #{} ----------", index);
+  // Parse as video format
+  uint32_t media_type, media_subtype;
+  if (spa_format_parse(param, &media_type, &media_subtype) < 0 ||
+      media_type != SPA_MEDIA_TYPE_video) {
+    spdlog::warn("  Failed to parse format or not a video format");
+    return;
+  }
+  
+  // Get media subtype string
+  const char* subtype_str = "Unknown";
+  switch (media_subtype) {
+    case SPA_MEDIA_SUBTYPE_raw: subtype_str = "RAW"; break;
+    case SPA_MEDIA_SUBTYPE_mjpg: subtype_str = "MJPEG"; break;
+    case SPA_MEDIA_SUBTYPE_h264: subtype_str = "H264"; break;
+  }
+  spdlog::info("  Media Subtype: {}", subtype_str);
+  
+  // Parse detailed format info
+  if (media_subtype == SPA_MEDIA_SUBTYPE_raw) {
+    struct spa_video_info_raw raw_info;
+    if (spa_format_video_raw_parse(param, &raw_info) >= 0) {
+      // Get format string
+      const char* format_str = spa_debug_type_find_name(spa_type_video_format, raw_info.format);
+      if (!format_str) format_str = "Unknown";
+      
+      spdlog::info("  Pixel Format: {}", format_str);
+      spdlog::info("  Resolution: {}x{}", raw_info.size.width, raw_info.size.height);
+      spdlog::info("  Framerate: {}/{} ({:.2f} fps)", 
+                  raw_info.framerate.num, raw_info.framerate.denom,
+                  raw_info.framerate.denom > 0 ? 
+                    static_cast<double>(raw_info.framerate.num) / raw_info.framerate.denom : 0.0);
+      
+      // Check for framerate range
+      if (raw_info.max_framerate.num > 0 && raw_info.max_framerate.denom > 0) {
+        spdlog::info("  Max Framerate: {}/{} ({:.2f} fps)",
+                    raw_info.max_framerate.num, raw_info.max_framerate.denom,
+                    static_cast<double>(raw_info.max_framerate.num) / raw_info.max_framerate.denom);
+      }
+    }
+  } else if (media_subtype == SPA_MEDIA_SUBTYPE_mjpg) {
+    struct spa_video_info_mjpg mjpg_info;
+    if (spa_format_video_mjpg_parse(param, &mjpg_info) >= 0) {
+      spdlog::info("  Pixel Format: MJPEG (encoded)");
+      spdlog::info("  Resolution: {}x{}", mjpg_info.size.width, mjpg_info.size.height);
+      spdlog::info("  Framerate: {}/{} ({:.2f} fps)",
+                  mjpg_info.framerate.num, mjpg_info.framerate.denom,
+                  mjpg_info.framerate.denom > 0 ?
+                    static_cast<double>(mjpg_info.framerate.num) / mjpg_info.framerate.denom : 0.0);
+      
+      if (mjpg_info.max_framerate.num > 0 && mjpg_info.max_framerate.denom > 0) {
+        spdlog::info("  Max Framerate: {}/{} ({:.2f} fps)",
+                    mjpg_info.max_framerate.num, mjpg_info.max_framerate.denom,
+                    static_cast<double>(mjpg_info.max_framerate.num) / mjpg_info.max_framerate.denom);
+      }
+    }
+  } else if (media_subtype == SPA_MEDIA_SUBTYPE_h264) {
+    struct spa_video_info_h264 h264_info;
+    if (spa_format_video_h264_parse(param, &h264_info) >= 0) {
+      spdlog::info("  Pixel Format: H264 (encoded)");
+      spdlog::info("  Resolution: {}x{}", h264_info.size.width, h264_info.size.height);
+      spdlog::info("  Framerate: {}/{} ({:.2f} fps)",
+                  h264_info.framerate.num, h264_info.framerate.denom,
+                  h264_info.framerate.denom > 0 ?
+                    static_cast<double>(h264_info.framerate.num) / h264_info.framerate.denom : 0.0);
+    }
+  }
+}
+
 //------------------------------------------------------------------------------
 CameraStream::CameraStream(flutter::PluginRegistrarDesktop* plugin_registrar,
 
@@ -293,28 +375,49 @@ bool CameraStream::Start(const std::string& camera_id) {
                           static_cast<uint32_t>(height_)};
     spa_fraction fps = {30, 1};
 
-    // Query supported formats
-    uint8_t buffer[1024];
+    // Query supported formats - request enumeration of ALL possible formats
+    // Build a comprehensive format query that will enumerate all camera capabilities
+    uint8_t buffer[4096];  // Larger buffer for comprehensive enumeration
     struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
 
-    const struct spa_pod* formats[2];
+    // Request ALL possible video formats (raw, MJPEG, H264, etc.)
+    // with wildcard/choice for resolution and framerate
+    const struct spa_pod* formats[1];
     formats[0] = static_cast<const spa_pod*>(spa_pod_builder_add_object(
-        &b, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat, SPA_FORMAT_mediaType,
-        SPA_POD_Id(SPA_MEDIA_TYPE_video), SPA_FORMAT_mediaSubtype,
-        SPA_POD_CHOICE_ENUM_Id(2, SPA_MEDIA_SUBTYPE_raw,
-                               SPA_MEDIA_SUBTYPE_mjpg),
-        SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&rect),
-        SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&fps)));
-
-    spdlog::debug("[CameraStream] Querying supported formats");
-    if (formats[0]) {
-      struct spa_video_info_raw video_info = {};
-      if (spa_format_video_raw_parse(formats[0], &video_info) >= 0) {
-        spdlog::debug("[CameraStream] Supported format - Size: {}x{}",
-                      video_info.size.width, video_info.size.height);
-      }
+        &b, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
+        SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
+        // Enumerate all subtypes
+        SPA_FORMAT_mediaSubtype, SPA_POD_CHOICE_ENUM_Id(3,
+                               SPA_MEDIA_SUBTYPE_raw,
+                               SPA_MEDIA_SUBTYPE_mjpg,
+                               SPA_MEDIA_SUBTYPE_h264)));
+    
+    // Connect with EnumFormat to get all possible formats enumerated
+    // This will trigger OnStreamParamChanged for each supported format
+    spdlog::info("[CameraStream] Requesting enumeration of all supported camera formats...");
+    if (int res = pw_stream_connect(
+            pw_stream_, PW_DIRECTION_INPUT, PW_ID_ANY,
+            static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
+                                         PW_STREAM_FLAG_MAP_BUFFERS),
+            formats, 1);
+        res < 0) {
+      spdlog::error("[CameraStream] pw_stream_connect() error during format enumeration: {}", res);
+      pw_stream_destroy(pw_stream_);
+      pw_stream_ = nullptr;
+      pw_thread_loop_unlock(loop);
+      return false;
     }
-
+    
+    // Wait a bit for format enumeration to complete
+    pw_thread_loop_unlock(loop);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    pw_thread_loop_lock(loop);
+    
+    // Now disconnect and reconnect with the desired format
+    pw_stream_disconnect(pw_stream_);
+    spdlog::info("========== END OF CAMERA CAPABILITIES ==========");
+    
+    // Rebuild stream for actual usage with desired format
     const spa_pod* params[1];
 
     
@@ -551,8 +654,21 @@ const char* StreamStateToString(enum pw_stream_state state) {
 }
 
 void  CameraStream::OnStreamParamChanged(void* data, uint32_t id, const struct spa_pod* param) {
+  auto* self = reinterpret_cast<CameraStream*>(data);
+  
   spdlog::debug("[CameraStream] param_changed: id={}", id);
-  if (param && id == SPA_PARAM_Format) {
+  
+  // Dump all enumerated formats
+  if (param && id == SPA_PARAM_EnumFormat) {
+    static int format_index = 0;
+    if (format_index == 0) {
+      spdlog::info("========== ENUMERATING ALL CAMERA CAPABILITIES ==========");
+      spdlog::info("Camera ID: {}", self->camera_id_);
+    }
+    dump_format_info(param, ++format_index);
+  } else if (param && id == SPA_PARAM_Format) {
+    spdlog::info("---------- NEGOTIATED FORMAT ----------");
+    dump_format_info(param, 0);
     spdlog::debug("[CameraStream] Format negotiated successfully");
   }
 }
