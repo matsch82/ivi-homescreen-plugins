@@ -99,15 +99,15 @@ class CameraStream {
   std::atomic<bool> new_frame_available_{false};
 
   // Dimensions
-  int width_ = 2304;
-  int height_ = 1296;
+  int width_ = 1280;
+  int height_ = 720;
 
   // Private methods
   void HandleProcess();
 
   // Camera name
   std::string camera_id_ = "";
-  std::string camera_output_format = "YUV2";
+  std::string camera_output_format = "MJPEG";
   // PipeWire callbacks (static => dispatch to instance)
   static void OnStreamStateChanged(void* data,
                                    pw_stream_state old_state,
