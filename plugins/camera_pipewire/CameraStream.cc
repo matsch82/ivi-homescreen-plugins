@@ -285,7 +285,7 @@ bool CameraStream::Start(const std::string& camera_id) {
         {}});
     spa_rectangle rect = {static_cast<uint32_t>(width_),
                           static_cast<uint32_t>(height_)};
-    spa_fraction fps = {30, 1};
+    spa_fraction fps = {25, 1};
 
     const spa_pod* params[1];
 
