@@ -34,7 +34,7 @@
 
 #cmakedefine01 ENABLE_PLUGIN_CAMERA_PIPEWIRE
 #if ENABLE_PLUGIN_CAMERA_PIPEWIRE
-#include "camera_pipewire/include/camera_pipewire/camera_plugin_c_api.h"
+#include "camera_pipewire/camera_plugin_c_api.h"
 #endif
 
 #cmakedefine01 ENABLE_PLUGIN_CLOUD_FIRESTORE

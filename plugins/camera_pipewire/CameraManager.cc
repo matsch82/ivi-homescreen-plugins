@@ -20,13 +20,17 @@
 
 // Static instance
 CameraManager& CameraManager::instance() {
+  spdlog::debug("[CameraManager.cc:instance] Getting singleton instance");
   static CameraManager s_instance;
   return s_instance;
 }
 
-CameraManager::CameraManager() = default;
+CameraManager::CameraManager() {
+  spdlog::debug("[CameraManager.cc:CameraManager] Constructor called");
+}
 
 CameraManager::~CameraManager() {
+  spdlog::debug("[CameraManager.cc:~CameraManager] Destructor called");
   // Ensure shutdown is called in case user forgot
   if (initialized_) {
     shutdown();
@@ -35,6 +39,8 @@ CameraManager::~CameraManager() {
 
 const std::map<uint32_t, std::string>& CameraManager::getAvailableCameras()
     const {
+  spdlog::debug(
+      "[CameraManager.cc:getAvailableCameras] Getting available cameras");
   return camera_nodes_;
 }
 
@@ -77,6 +83,7 @@ void CameraManager::on_global_remove(void* data, const uint32_t id) {
 }
 
 bool CameraManager::initialize() {
+  spdlog::debug("[CameraManager.cc:initialize] Initializing camera manager");
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (initialized_) {
@@ -149,6 +156,7 @@ bool CameraManager::initialize() {
 }
 
 void CameraManager::shutdown() {
+  spdlog::debug("[CameraManager.cc:shutdown] Shutting down camera manager");
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (!initialized_) {

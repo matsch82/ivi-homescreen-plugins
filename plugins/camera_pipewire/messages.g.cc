@@ -26,6 +26,8 @@
 #include <optional>
 #include <string>
 
+#include "spdlog/spdlog.h"
+
 namespace camera_plugin {
 using flutter::BasicMessageChannel;
 using flutter::CustomEncodableValue;
@@ -268,6 +270,7 @@ void CameraApi::SetUp(flutter::BinaryMessenger* binary_messenger,
           ? std::string(".") + message_channel_suffix
           : "";
   {
+    spdlog::debug("Setting up CameraApi{}.");
     BasicMessageChannel<> channel(
         binary_messenger,
         "dev.flutter.pigeon.camera_linux.CameraApi.getAvailableCameras" +

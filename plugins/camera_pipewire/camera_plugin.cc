@@ -61,6 +61,7 @@ namespace camera_plugin {
 
 void CameraPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarDesktop* registrar) {
+  spdlog::debug("[camera_plugin.cc] RegisterWithRegistrar");
   auto plugin =
       std::make_unique<CameraPlugin>(registrar, registrar->messenger());
   CameraPlugin::SetUp(registrar->messenger(), plugin.get());
@@ -80,6 +81,7 @@ CameraPlugin::~CameraPlugin() {
 }
 
 ErrorOr<flutter::EncodableList> CameraPlugin::GetAvailableCameras() {
+  spdlog::debug("[camera_plugin.cc] GetAvailableCameras");
   flutter::EncodableList list;
   auto& mgr = CameraManager::instance();
   auto cameras = mgr.getAvailableCameras();
@@ -115,6 +117,7 @@ int decode_mjpeg(const uint8_t* input,
                  uint8_t* output,
                  int out_width,
                  int out_height) {
+  spdlog::debug("[camera_plugin.cc] decode_mjpeg");
   jpeg_decompress_struct cinfo{};
   jpeg_error_mgr jerr{};
 
@@ -163,6 +166,7 @@ void save_image_to_jpeg(const std::string& filename,
                         int height,
                         int channels,
                         int quality) {
+  spdlog::debug("[camera_plugin.cc] save_image_to_jpeg");
   struct jpeg_compress_struct cinfo {};
   struct jpeg_error_mgr jerr {};
 
@@ -208,6 +212,7 @@ void save_image_to_jpeg(const std::string& filename,
 void CameraPlugin::Initialize(
     const int64_t texture_id,
     const std::function<void(ErrorOr<PlatformSize> reply)> result) {
+  spdlog::debug("[camera_plugin.cc] Initialize");
   if (TextureId_CameraStream.find(texture_id) == TextureId_CameraStream.end()) {
     return;  // means, the texture_id is not found.
   }
@@ -220,7 +225,7 @@ void CameraPlugin::Initialize(
   camera_stream->Start(camera_stream->camera_id());
 }
 void CameraPlugin::blit_fb(uint8_t const* pixels) const {
-  spdlog::debug("[camera_plugin] blit_fb");
+  spdlog::debug("[camera_plugin.cc] blit_fb");
   texture_registrar_->TextureClearCurrent();
   glBindFramebuffer(GL_FRAMEBUFFER, mPreview.framebuffer);
   glViewport(0, 0, mPreview.width, mPreview.height);
@@ -246,7 +251,7 @@ void CameraPlugin::blit_fb(uint8_t const* pixels) const {
 }
 
 std::optional<FlutterError> CameraPlugin::Dispose(const int64_t texture_id) {
-  spdlog::debug("[camera_plugin] dispose texture_id: {}", texture_id);
+  spdlog::debug("[camera_plugin.cc] Dispose texture_id: {}", texture_id);
   const auto camera_stream = TextureId_CameraStream[texture_id];
   camera_stream->Stop();
   return {};
@@ -255,7 +260,7 @@ std::optional<FlutterError> CameraPlugin::Dispose(const int64_t texture_id) {
 void CameraPlugin::TakePicture(
     const int64_t texture_id,
     const std::function<void(ErrorOr<std::string> reply)> result) {
-  spdlog::debug("[camera_plugin] take picture for texture_id: {}", texture_id);
+  spdlog::debug("[camera_plugin.cc] TakePicture texture_id: {}", texture_id);
   const auto camera_stream = TextureId_CameraStream[texture_id];
   result(ErrorOr<std::string>(camera_stream->takePicture()));
 }
@@ -273,7 +278,7 @@ void CameraPlugin::StopVideoRecording(
 void CameraPlugin::PausePreview(
     const int64_t texture_id,
     const std::function<void(std::optional<FlutterError> reply)> result) {
-  spdlog::debug("[camera_plugin] pause preview texture_id: {}", texture_id);
+  spdlog::debug("[camera_plugin.cc] PausePreview texture_id: {}", texture_id);
   const auto camera_stream = TextureId_CameraStream[texture_id];
   camera_stream->PauseStream();
   result({});
@@ -282,7 +287,7 @@ void CameraPlugin::PausePreview(
 void CameraPlugin::ResumePreview(
     const int64_t texture_id,
     const std::function<void(std::optional<FlutterError> reply)> result) {
-  spdlog::debug("[camera_plugin] resume preview");
+  spdlog::debug("[camera_plugin.cc] ResumePreview");
   const auto camera_stream = TextureId_CameraStream[texture_id];
   camera_stream->ResumeStream();
   result({});

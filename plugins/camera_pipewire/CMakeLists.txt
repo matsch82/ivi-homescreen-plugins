@@ -17,6 +17,7 @@ find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(PIPEWIRE IMPORTED_TARGET REQUIRED libpipewire-0.3)
 pkg_check_modules(JPEG IMPORTED_TARGET REQUIRED libjpeg)
+pkg_check_modules(EGL egl glesv2 IMPORTED_TARGET REQUIRED)
 
 add_library(plugin_camera_pipewire STATIC
         camera_plugin_c_api.cc
@@ -35,6 +36,7 @@ target_include_directories(plugin_camera_pipewire PUBLIC
 target_link_libraries(plugin_camera_pipewire PUBLIC
         PkgConfig::PIPEWIRE
         PkgConfig::JPEG
+        PkgConfig::EGL
         flutter
         platform_homescreen
         plugin_common

@@ -40,7 +40,8 @@ static constexpr char kPictureCaptureExtension[] = "jpeg";
 // A helper function for MJPEG decoding
 //------------------------------------------------------------------------------
 static int decode_mjpeg(const uint8_t* input,
-                        size_t input_size,
+    spdlog::debug("[CameraStream.cc:decode_mjpeg] Decoding MJPEG frame");
+    size_t input_size,
                         uint8_t* output,
                         int out_width,
                         int out_height) {
@@ -80,7 +81,8 @@ static int decode_mjpeg(const uint8_t* input,
 }
 
 static int decode_yuy2(const uint8_t* input,
-                       size_t input_size,
+  spdlog::debug("[CameraStream.cc:decode_yuy2] Decoding YUY2 frame");
+    size_t input_size,
                        uint8_t* output,
                        int width,
                        int height) {
@@ -132,8 +134,8 @@ static int decode_yuy2(const uint8_t* input,
 // Constructor
 //------------------------------------------------------------------------------
 CameraStream::CameraStream(flutter::PluginRegistrarDesktop* plugin_registrar,
-                           std::string camera_id,
-                           int width,
+  spdlog::debug("[CameraStream.cc:CameraStream] Constructor called");
+    std::string camera_id, int width,
                            int height)
     : registrar_(plugin_registrar),
       width_(width),
@@ -216,6 +218,7 @@ CameraStream::CameraStream(flutter::PluginRegistrarDesktop* plugin_registrar,
 // Destructor
 //------------------------------------------------------------------------------
 CameraStream::~CameraStream() {
+  spdlog::debug("[CameraStream.cc:~CameraStream] Destructor called");
   Stop();
 }
 
@@ -223,6 +226,7 @@ CameraStream::~CameraStream() {
 // Start capturing from the given node ID
 //------------------------------------------------------------------------------
 bool CameraStream::Start(const std::string& camera_id) {
+  spdlog::debug("[CameraStream.cc:Start] Starting camera stream");
   // 1) Ensure the manager is running
   auto& mgr = CameraManager::instance();
   if (!mgr.initialize()) {
@@ -346,6 +350,7 @@ bool CameraStream::Start(const std::string& camera_id) {
 // Stop capturing
 //------------------------------------------------------------------------------
 void CameraStream::Stop() {
+  spdlog::debug("[CameraStream.cc:Stop] Stopping camera stream");
   if (!pw_stream_) {
     return;  // already stopped
   }
@@ -414,6 +419,7 @@ void save_image_to_jpeg(const std::string& filename,
 // Private method: called each time there's a new MJPEG frame
 //------------------------------------------------------------------------------
 void CameraStream::HandleProcess() {
+  spdlog::debug("[CameraStream.cc:HandleProcess] Processing new frame");
   if (!pw_stream_)
     return;
   pw_buffer* buf = pw_stream_dequeue_buffer(pw_stream_);
@@ -497,20 +503,23 @@ const char* StreamStateToString(enum pw_stream_state state) {
 }
 
 void CameraStream::OnStreamStateChanged(void* /*data*/,
-                                        pw_stream_state old_state,
-                                        pw_stream_state new_state,
+  spdlog::debug("[CameraStream.cc:OnStreamStateChanged] Stream state changed callback");
+    pw_stream_state old_state,
+    pw_stream_state new_state,
                                         const char* /*error*/) {
   spdlog::debug("[CameraStream] stream state changed from {} to {}",
                 StreamStateToString(old_state), StreamStateToString(new_state));
 }
 
 void CameraStream::OnStreamProcess(void* data) {
+  spdlog::debug("[CameraStream.cc:OnStreamProcess] Stream process callback");
   auto* self = reinterpret_cast<CameraStream*>(data);
   (void)self;
   self->HandleProcess();
 }
 
 void CameraStream::PauseStream() const {
+  spdlog::debug("[CameraStream.cc:PauseStream] Pausing camera stream");
   if (!pw_stream_)
     return;
 
@@ -532,6 +541,7 @@ void CameraStream::PauseStream() const {
 }
 
 void CameraStream::ResumeStream() const {
+  spdlog::debug("[CameraStream.cc:ResumeStream] Resuming camera stream");
   if (!pw_stream_)
     return;
 
@@ -552,6 +562,7 @@ void CameraStream::ResumeStream() const {
   pw_thread_loop_unlock(loop);
 }
 std::optional<std::string> CameraStream::GetFilePathForPicture() {
+  spdlog::debug("[CameraStream.cc:GetFilePathForPicture] Getting file path for picture");
   std::ostringstream oss;
   oss << "xdg-user-dir PICTURES";
   std::string picture_path;
@@ -567,6 +578,7 @@ std::optional<std::string> CameraStream::GetFilePathForPicture() {
 }
 
 std::string CameraStream::takePicture() const {
+  spdlog::debug("[CameraStream.cc:takePicture] Taking picture");
   auto filename = GetFilePathForPicture();
   save_image_to_jpeg(filename.value(), decoded_buffer_.get(), width_, height_,
                      3, 90);
