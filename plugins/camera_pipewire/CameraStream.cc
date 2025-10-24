@@ -293,7 +293,31 @@ bool CameraStream::Start(const std::string& camera_id) {
                           static_cast<uint32_t>(height_)};
     spa_fraction fps = {30, 1};
 
+    // Query supported formats
+    uint8_t buffer[1024];
+    struct spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+
+    const struct spa_pod* formats[2];
+    formats[0] = static_cast<const spa_pod*>(spa_pod_builder_add_object(
+        &b, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat, SPA_FORMAT_mediaType,
+        SPA_POD_Id(SPA_MEDIA_TYPE_video), SPA_FORMAT_mediaSubtype,
+        SPA_POD_CHOICE_ENUM_Id(2, SPA_MEDIA_SUBTYPE_raw,
+                               SPA_MEDIA_SUBTYPE_mjpg),
+        SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&rect),
+        SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&fps)));
+
+    spdlog::debug("[CameraStream] Querying supported formats");
+    if (formats[0]) {
+      struct spa_video_info_raw video_info = {};
+      if (spa_format_video_raw_parse(formats[0], &video_info) >= 0) {
+        spdlog::debug("[CameraStream] Supported format - Size: {}x{}",
+                      video_info.size.width, video_info.size.height);
+      }
+    }
+
     const spa_pod* params[1];
+
+    
 
     std::string format_env;
     if (const char* env = std::getenv("CAMERA_OUTPUT_FORMAT")) {
