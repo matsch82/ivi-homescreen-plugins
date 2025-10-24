@@ -526,7 +526,7 @@ const char* StreamStateToString(enum pw_stream_state state) {
   }
 }
 
-static void OnStreamParamChanged(void* data, uint32_t id, const struct spa_pod* param) {
+void  CameraStream::OnStreamParamChanged(void* data, uint32_t id, const struct spa_pod* param) {
   spdlog::debug("[CameraStream] param_changed: id={}", id);
   if (param && id == SPA_PARAM_Format) {
     spdlog::debug("[CameraStream] Format negotiated successfully");
@@ -542,25 +542,7 @@ void CameraStream::OnStreamStateChanged(void* /*data*/,
                 StreamStateToString(old_state), StreamStateToString(new_state));
 
 }
-void CameraStream::OnStreamParamChanged(void* data,
-                                        uint32_t id,
-                                        const spa_pod* param) {
-  spdlog::debug(
-      "[CameraStream.cc:OnStreamParamChanged] Stream param changed callback");
-  spdlog::debug("[CameraStream] param_changed: id={}", id);
-  if (param && id == SPA_PARAM_Format) {
-    uint32_t media_type;
-    uint32_t media_subtype;
-    spa_format_video_raw_parse(param, nullptr);
-    if (spa_pod_parse_object(param, SPA_TYPE_OBJECT_Format, nullptr,
-                             SPA_FORMAT_mediaType, SPA_POD_Id(&media_type),
-                             SPA_FORMAT_mediaSubtype,
-                             SPA_POD_Id(&media_subtype)) >= 0) {
-      spdlog::debug("[CameraStream] media_type:{}, media_subtype:{}",
-                    media_type, media_subtype);
-    }
-  }
-}
+
 
 void CameraStream::OnStreamProcess(void* data) {
   spdlog::debug("[CameraStream.cc:OnStreamProcess] Stream process callback");
