@@ -408,7 +408,13 @@ void CameraStream::HandleProcess() {
   if (!buf)
     return;
 
-  if (!buf->buffer->datas[0].data) {
+  // Guard against malformed/early buffers that arrive before the CSI hardware
+  // link is fully established (rp1-cfe probe race): chunk may be null even
+  // when data is mapped, and n_datas may be 0 on the very first callback.
+  if (buf->buffer->n_datas == 0 ||
+      !buf->buffer->datas[0].data ||
+      !buf->buffer->datas[0].chunk ||
+      buf->buffer->datas[0].chunk->size == 0) {
     pw_stream_queue_buffer(pw_stream_, buf);
     return;
   }
