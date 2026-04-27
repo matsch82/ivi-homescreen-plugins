@@ -269,16 +269,16 @@ bool CameraStream::Start(const std::string& camera_id) {
     if (std::string format_env = env_value ? env_value : "";
         format_env == "MJPEG") {
       camera_output_format = "MJPEG";
-    } else if (format_env == "YUV2") {
-      camera_output_format = "YUV2";
-    } else if (format_env == "RGB3" || format_env.empty()) {
+    } else if (format_env == "RGB3") {
       camera_output_format = "RGB3";
+    } else if (format_env == "YUV2" || format_env.empty()) {
+      camera_output_format = "YUV2";
     } else {
       spdlog::warn(
           "[CameraStream] CAMERA_OUTPUT_FORMAT='{}' is unsupported. "
-          "Supported values: RGB3, MJPEG, YUV2. Defaulting to RGB3.",
+          "Supported values: YUV2, RGB3, MJPEG. Defaulting to YUV2.",
           format_env);
-      camera_output_format = "RGB3";
+      camera_output_format = "YUV2";
     }
 
     spdlog::debug("[CameraStream] camera_output_format is set to {}",
