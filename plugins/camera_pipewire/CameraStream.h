@@ -21,7 +21,10 @@
 #include <optional>
 #include <string>
 
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 
 #include <flutter/plugin_registrar_homescreen.h>
 #include <flutter/texture_registrar.h>
@@ -98,6 +101,26 @@ class CameraStream {
   // Dimensions
   int width_ = 640;
   int height_ = 480;
+
+  // -------------------------------------------------------------------------
+  // DMA-BUF zero-copy + GLSL YUV→RGB path
+  //
+  // When dma_buf_path_ is true, HandleProcess() imports each PipeWire
+  // DMA-BUF frame directly into the GPU via EGL_EXT_image_dma_buf_import and
+  // converts YUYV→RGB with a fragment shader, eliminating both the CPU decode
+  // loop and the glTexSubImage2D memcpy.
+  // -------------------------------------------------------------------------
+  EGLDisplay egl_display_{EGL_NO_DISPLAY};
+  GLuint     shader_program_{0};
+  GLuint     yuv_texture_{0};   ///< GL_TEXTURE_EXTERNAL_OES — DMA-BUF input
+  GLuint     quad_vbo_{0};      ///< fullscreen-quad vertex buffer
+  GLint      loc_yuv_{-1};      ///< uniform location for u_yuv sampler
+  bool       dma_buf_path_{false};
+
+  // EGL/GL extension function pointers (loaded via eglGetProcAddress)
+  PFNEGLCREATEIMAGEKHRPROC            pfn_eglCreateImageKHR{nullptr};
+  PFNEGLDESTROYIMAGEKHRPROC           pfn_eglDestroyImageKHR{nullptr};
+  PFNGLEGLIMAGETARGETTEXTURE2DOESPROC pfn_glEGLImageTargetTexture2DOES{nullptr};
 
   // Private methods
   void HandleProcess();

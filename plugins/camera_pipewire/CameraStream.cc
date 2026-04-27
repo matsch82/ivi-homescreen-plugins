@@ -25,6 +25,7 @@
 
 #include <GLES2/gl2.h>
 #include <jpeglib.h>
+#include <spa/buffer/buffer.h>
 #include <spa/param/format-utils.h>
 #include <spa/param/format.h>
 #include <spa/param/video/raw-utils.h>
@@ -35,6 +36,81 @@
 #include "plugins/common/common.h"
 
 static constexpr char kPictureCaptureExtension[] = "jpeg";
+
+// DRM fourcc for YUYV packed 4:2:2 (V4L2_PIX_FMT_YUYV)
+#ifndef DRM_FORMAT_YUYV
+#define DRM_FORMAT_YUYV 0x56595559U
+#endif
+
+// ---------------------------------------------------------------------------
+// GLSL shaders for YUYV→RGB conversion via samplerExternalOES.
+// The Mesa V3D TMU handles the YUV→RGBA conversion when sampling a YUYV
+// DMA-BUF imported as GL_TEXTURE_EXTERNAL_OES, so the fragment shader is a
+// simple pass-through.
+// Quad texcoords map the DMA-BUF top (v=0) to the FBO bottom row to match
+// the orientation produced by the legacy glTexSubImage2D path.
+// ---------------------------------------------------------------------------
+static constexpr char kVertexShaderSrc[] =
+    "attribute vec2 a_position;\n"
+    "attribute vec2 a_texCoord;\n"
+    "varying vec2 v_texCoord;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(a_position, 0.0, 1.0);\n"
+    "    v_texCoord  = a_texCoord;\n"
+    "}\n";
+
+static constexpr char kFragmentShaderSrc[] =
+    "#extension GL_OES_EGL_image_external : require\n"
+    "precision mediump float;\n"
+    "uniform samplerExternalOES u_yuv;\n"
+    "varying vec2 v_texCoord;\n"
+    "void main() {\n"
+    "    gl_FragColor = texture2D(u_yuv, v_texCoord);\n"
+    "}\n";
+
+// Fullscreen quad: (x, y, u, v).  v=0 at FBO bottom maps to DMA-BUF row 0
+// (camera top), giving the same vertical orientation as glTexSubImage2D.
+static constexpr float kQuadVertices[] = {
+    -1.0f, -1.0f, 0.0f, 0.0f,
+     1.0f, -1.0f, 1.0f, 0.0f,
+    -1.0f,  1.0f, 0.0f, 1.0f,
+     1.0f,  1.0f, 1.0f, 1.0f,
+};
+
+static GLuint CompileShader(GLenum type, const char* src) {
+  GLuint shader = glCreateShader(type);
+  glShaderSource(shader, 1, &src, nullptr);
+  glCompileShader(shader);
+  GLint ok = 0;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+  if (!ok) {
+    char log[512];
+    glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+    spdlog::error("[CameraStream] shader compile error: {}", log);
+    glDeleteShader(shader);
+    return 0;
+  }
+  return shader;
+}
+
+static GLuint LinkProgram(GLuint vert, GLuint frag) {
+  GLuint prog = glCreateProgram();
+  glAttachShader(prog, vert);
+  glAttachShader(prog, frag);
+  glBindAttribLocation(prog, 0, "a_position");
+  glBindAttribLocation(prog, 1, "a_texCoord");
+  glLinkProgram(prog);
+  GLint ok = 0;
+  glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+  if (!ok) {
+    char log[512];
+    glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
+    spdlog::error("[CameraStream] shader link error: {}", log);
+    glDeleteProgram(prog);
+    return 0;
+  }
+  return prog;
+}
 
 //------------------------------------------------------------------------------
 // A helper function for MJPEG decoding
@@ -141,6 +217,55 @@ CameraStream::CameraStream(flutter::PluginRegistrarDesktop* plugin_registrar,
       camera_id_(std::move(camera_id)) {
   registrar_->texture_registrar()->TextureMakeCurrent();
 
+  // ------------------------------------------------------------------
+  // Attempt to initialise the DMA-BUF zero-copy + GLSL conversion path.
+  // eglGetCurrentDisplay() works here because TextureMakeCurrent() just
+  // made the texture-upload EGL context current on this thread.
+  // ------------------------------------------------------------------
+  egl_display_ = eglGetCurrentDisplay();
+  pfn_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(
+      eglGetProcAddress("eglCreateImageKHR"));
+  pfn_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(
+      eglGetProcAddress("eglDestroyImageKHR"));
+  pfn_glEGLImageTargetTexture2DOES =
+      reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+          eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+
+  if (egl_display_ != EGL_NO_DISPLAY && pfn_eglCreateImageKHR &&
+      pfn_eglDestroyImageKHR && pfn_glEGLImageTargetTexture2DOES) {
+    GLuint vert = CompileShader(GL_VERTEX_SHADER,   kVertexShaderSrc);
+    GLuint frag = CompileShader(GL_FRAGMENT_SHADER, kFragmentShaderSrc);
+    if (vert && frag) {
+      shader_program_ = LinkProgram(vert, frag);
+    }
+    if (vert) glDeleteShader(vert);
+    if (frag) glDeleteShader(frag);
+
+    if (shader_program_) {
+      loc_yuv_ = glGetUniformLocation(shader_program_, "u_yuv");
+
+      glGenBuffers(1, &quad_vbo_);
+      glBindBuffer(GL_ARRAY_BUFFER, quad_vbo_);
+      glBufferData(GL_ARRAY_BUFFER, sizeof(kQuadVertices),
+                   kQuadVertices, GL_STATIC_DRAW);
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+      glGenTextures(1, &yuv_texture_);
+      glBindTexture(GL_TEXTURE_EXTERNAL_OES, yuv_texture_);
+      glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+
+      dma_buf_path_ = true;
+      spdlog::info("[CameraStream] DMA-BUF zero-copy + GLSL path initialised.");
+    }
+  }
+  if (!dma_buf_path_) {
+    spdlog::warn("[CameraStream] DMA-BUF path unavailable; using CPU decode fallback.");
+  }
+
   glGenFramebuffers(1, &framebuffer_);
   glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
 
@@ -199,6 +324,14 @@ CameraStream::CameraStream(flutter::PluginRegistrarDesktop* plugin_registrar,
 //------------------------------------------------------------------------------
 CameraStream::~CameraStream() {
   Stop();
+  // Clean up GPU resources created by the DMA-BUF path.
+  if (shader_program_ || yuv_texture_ || quad_vbo_) {
+    registrar_->texture_registrar()->TextureMakeCurrent();
+    if (shader_program_) { glDeleteProgram(shader_program_); }
+    if (yuv_texture_)    { glDeleteTextures(1, &yuv_texture_); }
+    if (quad_vbo_)       { glDeleteBuffers(1, &quad_vbo_); }
+    registrar_->texture_registrar()->TextureClearCurrent();
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -438,6 +571,80 @@ void CameraStream::HandleProcess() {
                     GL_RGB, GL_UNSIGNED_BYTE, frameData);
     glBindTexture(GL_TEXTURE_2D, 0);
     registrar_->texture_registrar()->TextureClearCurrent();
+    registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
+  } else if (dma_buf_path_ && camera_output_format == "YUV2" &&
+             buf->buffer->datas[0].type == SPA_DATA_DmaBuf) {
+    // ----------------------------------------------------------------
+    // Zero-copy DMA-BUF path: import the PipeWire DMA-BUF fd directly
+    // as an EGL image and convert YUYV→RGB on the GPU via a GLSL
+    // fragment shader.  No CPU decode, no glTexSubImage2D memcpy.
+    // ----------------------------------------------------------------
+    const int     fd     = buf->buffer->datas[0].fd;
+    const EGLint  offset = static_cast<EGLint>(buf->buffer->datas[0].chunk->offset);
+    const EGLint  stride = static_cast<EGLint>(
+        buf->buffer->datas[0].chunk->stride > 0
+            ? buf->buffer->datas[0].chunk->stride
+            : width_ * 2);  // YUYV: 2 bytes/pixel
+
+    const EGLint img_attrs[] = {
+        EGL_WIDTH,                     static_cast<EGLint>(width_),
+        EGL_HEIGHT,                    static_cast<EGLint>(height_),
+        EGL_LINUX_DRM_FOURCC_EXT,      static_cast<EGLint>(DRM_FORMAT_YUYV),
+        EGL_DMA_BUF_PLANE0_FD_EXT,     fd,
+        EGL_DMA_BUF_PLANE0_OFFSET_EXT, offset,
+        EGL_DMA_BUF_PLANE0_PITCH_EXT,  stride,
+        EGL_NONE
+    };
+
+    EGLImageKHR image = pfn_eglCreateImageKHR(
+        egl_display_, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, img_attrs);
+    if (image == EGL_NO_IMAGE_KHR) {
+      spdlog::error("[CameraStream] eglCreateImageKHR failed: 0x{:X}", eglGetError());
+      pw_stream_queue_buffer(pw_stream_, buf);
+      return;
+    }
+
+    registrar_->texture_registrar()->TextureMakeCurrent();
+
+    // Attach the DMA-BUF EGL image to the YUV input texture.
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, yuv_texture_);
+    pfn_glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES,
+                                     static_cast<GLeglImageOES>(image));
+
+    // Render the YUYV external texture into the output FBO via the
+    // conversion shader.  Mesa V3D's TMU converts YUV→RGBA at sample time.
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+    glViewport(0, 0, width_, height_);
+    glUseProgram(shader_program_);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, yuv_texture_);
+    glUniform1i(loc_yuv_, 0);
+
+    constexpr GLsizei kStride = 4 * sizeof(float);
+    glBindBuffer(GL_ARRAY_BUFFER, quad_vbo_);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, kStride,
+                          reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, kStride,
+                          reinterpret_cast<void*>(2 * sizeof(float)));
+
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    glUseProgram(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    registrar_->texture_registrar()->TextureClearCurrent();
+
+    // Release the EGL image — the YUV texture holds its own reference
+    // until rebound, so this is safe to call before MarkTextureFrameAvailable.
+    pfn_eglDestroyImageKHR(egl_display_, image);
+
     registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
   } else {
     // Legacy CPU-decode paths (YUV2 / MJPEG).
