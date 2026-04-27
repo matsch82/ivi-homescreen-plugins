@@ -21,6 +21,7 @@
 #include <future>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include <GLES2/gl2.h>
 #include <jpeglib.h>
@@ -138,27 +139,6 @@ CameraStream::CameraStream(flutter::PluginRegistrarDesktop* plugin_registrar,
       width_(width),
       height_(height),
       camera_id_(std::move(camera_id)) {
-  // Allocate RGB buffer for frames
-  decoded_buffer_.reset(new uint8_t[width_ * height_ * 3]);
-  std::memset(decoded_buffer_.get(), 0, width_ * height_ * 3);
-
-  // Create the Flutter PixelBufferTexture
-  auto pixel_buffer_texture = std::make_unique<flutter::PixelBufferTexture>(
-      [this](size_t /*width*/,
-             size_t /*height*/) -> const FlutterDesktopPixelBuffer* {
-        static FlutterDesktopPixelBuffer pixel_buffer = {};
-        static std::mutex s_mutex;
-        std::lock_guard lock(s_mutex);
-
-        pixel_buffer.width = width_;
-        pixel_buffer.height = height_;
-        pixel_buffer.buffer = decoded_buffer_.get();
-
-        pixel_buffer.release_context = nullptr;
-        pixel_buffer.release_callback = nullptr;
-        return &pixel_buffer;
-      });
-
   registrar_->texture_registrar()->TextureMakeCurrent();
 
   glGenFramebuffers(1, &framebuffer_);
@@ -173,7 +153,10 @@ CameraStream::CameraStream(flutter::PluginRegistrarDesktop* plugin_registrar,
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+  // RGB24 rows may not be 4-byte aligned; set once here so HandleProcess
+  // never has to touch pixel-store state per frame.
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB,
                GL_UNSIGNED_BYTE, nullptr);
   glBindTexture(GL_TEXTURE_2D, 0);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
@@ -288,12 +271,14 @@ bool CameraStream::Start(const std::string& camera_id) {
       camera_output_format = "MJPEG";
     } else if (format_env == "YUV2") {
       camera_output_format = "YUV2";
+    } else if (format_env == "RGB3" || format_env.empty()) {
+      camera_output_format = "RGB3";
     } else {
-      spdlog::error(
-          "CAMERA_OUTPUT_FORMAT is set to an unsupported value ('{}'). "
-          "Supported values: MJPEG, YUV2. Defaulting to YUV2.",
+      spdlog::warn(
+          "[CameraStream] CAMERA_OUTPUT_FORMAT='{}' is unsupported. "
+          "Supported values: RGB3, MJPEG, YUV2. Defaulting to RGB3.",
           format_env);
-      camera_output_format = "YUV2";
+      camera_output_format = "RGB3";
     }
 
     spdlog::debug("[CameraStream] camera_output_format is set to {}",
@@ -312,6 +297,14 @@ bool CameraStream::Start(const std::string& camera_id) {
           SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
           SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
           SPA_FORMAT_VIDEO_format, SPA_POD_Id(SPA_VIDEO_FORMAT_YUY2),
+          SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&rect),
+          SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&fps)));
+    } else {  // RGB3 (default)
+      params[0] = static_cast<const spa_pod*>(spa_pod_builder_add_object(
+          &builder, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
+          SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
+          SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+          SPA_FORMAT_VIDEO_format, SPA_POD_Id(SPA_VIDEO_FORMAT_RGB),
           SPA_FORMAT_VIDEO_size, SPA_POD_Rectangle(&rect),
           SPA_FORMAT_VIDEO_framerate, SPA_POD_Fraction(&fps)));
     }
@@ -420,53 +413,50 @@ void CameraStream::HandleProcess() {
     return;
   }
 
-  const auto* compressedData =
-      static_cast<uint8_t*>(buf->buffer->datas[0].data);
-  const size_t compressedSize = buf->buffer->datas[0].chunk->size;
+  const auto* frameData =
+      static_cast<const uint8_t*>(buf->buffer->datas[0].data);
+  const size_t frameSize = buf->buffer->datas[0].chunk->size;
 
-  if (!decoded_buffer_) {
-    decoded_buffer_.reset(new uint8_t[width_ * height_ * 3]);
-  }
-
-  int ret = -1;
-  if (camera_output_format == "YUV2") {
-    ret = decode_yuy2(compressedData, compressedSize, decoded_buffer_.get(),
-                      width_, height_);
-  } else if (camera_output_format == "MJPEG") {
-    ret = decode_mjpeg(compressedData, compressedSize, decoded_buffer_.get(),
-                       width_, height_);
-  }
-
-  if (ret == 0) {
-    {
-      std::lock_guard lock(frame_mutex_);
-      new_frame_available_ = true;
+  if (camera_output_format == "RGB3") {
+    // Direct GPU upload: the camera delivers packed RGB24 — no CPU conversion.
+    const size_t expected = static_cast<size_t>(width_ * height_ * 3);
+    if (frameSize < expected) {
+      spdlog::error("[CameraStream] RGB3 frame too small: {} < {}",
+                    frameSize, expected);
+      pw_stream_queue_buffer(pw_stream_, buf);
+      return;
+    }
+    registrar_->texture_registrar()->TextureMakeCurrent();
+    glBindTexture(GL_TEXTURE_2D, texture_id_);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_,
+                    GL_RGB, GL_UNSIGNED_BYTE, frameData);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    registrar_->texture_registrar()->TextureClearCurrent();
+    registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
+  } else {
+    // Legacy CPU-decode paths (YUV2 / MJPEG).
+    if (!decoded_buffer_) {
+      decoded_buffer_.reset(new uint8_t[width_ * height_ * 3]);
+    }
+    int ret = -1;
+    if (camera_output_format == "YUV2") {
+      ret = decode_yuy2(frameData, frameSize, decoded_buffer_.get(),
+                        width_, height_);
+    } else if (camera_output_format == "MJPEG") {
+      ret = decode_mjpeg(frameData, frameSize, decoded_buffer_.get(),
+                         width_, height_);
+    }
+    if (ret == 0) {
       registrar_->texture_registrar()->TextureMakeCurrent();
-      glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
-      glViewport(0, 0, width_, height_);
-
-      glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, texture_id_);
-      glUniform1i(0, 0);
-      glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
-                      GL_LINEAR_MIPMAP_LINEAR);
-
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width_, height_, 0, GL_RGB,
-                   GL_UNSIGNED_BYTE, decoded_buffer_.get());
-      glGenerateMipmap(GL_TEXTURE_2D);
-
-      glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_,
+                      GL_RGB, GL_UNSIGNED_BYTE, decoded_buffer_.get());
+      glBindTexture(GL_TEXTURE_2D, 0);
       registrar_->texture_registrar()->TextureClearCurrent();
       registrar_->texture_registrar()->MarkTextureFrameAvailable(texture_id_);
+    } else {
+      spdlog::error("[CameraStream] frame decode failed.");
     }
-  } else {
-    spdlog::error("[CameraStream] mjpeg decode failed.");
   }
   pw_stream_queue_buffer(pw_stream_, buf);
 }
@@ -561,10 +551,40 @@ std::optional<std::string> CameraStream::GetFilePathForPicture() {
   return path;
 }
 
-std::string CameraStream::takePicture() const {
+std::string CameraStream::takePicture() {
   auto filename = GetFilePathForPicture();
-  save_image_to_jpeg(filename.value(), decoded_buffer_.get(), width_, height_,
-                     3, 90);
+  if (!filename.has_value()) {
+    spdlog::error("[CameraStream] takePicture: could not determine output path.");
+    return {};
+  }
+
+  if (camera_output_format == "RGB3") {
+    // No persistent CPU copy in RGB3 mode; read back from the GPU framebuffer.
+    // GLES2 only guarantees GL_RGBA/GL_UNSIGNED_BYTE for glReadPixels.
+    registrar_->texture_registrar()->TextureMakeCurrent();
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+    std::vector<uint8_t> rgba(static_cast<size_t>(width_ * height_ * 4));
+    glReadPixels(0, 0, width_, height_, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    registrar_->texture_registrar()->TextureClearCurrent();
+
+    // Strip alpha: the JPEG encoder expects RGB24.
+    std::vector<uint8_t> rgb(static_cast<size_t>(width_ * height_ * 3));
+    const int pixels = width_ * height_;
+    for (int i = 0; i < pixels; ++i) {
+      rgb[i * 3 + 0] = rgba[i * 4 + 0];
+      rgb[i * 3 + 1] = rgba[i * 4 + 1];
+      rgb[i * 3 + 2] = rgba[i * 4 + 2];
+    }
+    save_image_to_jpeg(filename.value(), rgb.data(), width_, height_, 3, 90);
+  } else {
+    if (!decoded_buffer_) {
+      spdlog::error("[CameraStream] takePicture: no frame decoded yet.");
+      return {};
+    }
+    save_image_to_jpeg(filename.value(), decoded_buffer_.get(), width_, height_,
+                       3, 90);
+  }
 
   return filename.value();
 }

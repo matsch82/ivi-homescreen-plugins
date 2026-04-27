@@ -17,9 +17,7 @@
 #ifndef PLUGINS_CAMERA_PIPEWIRE_CAMERASTREAM_H
 #define PLUGINS_CAMERA_PIPEWIRE_CAMERASTREAM_H
 
-#include <atomic>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 
@@ -77,7 +75,7 @@ class CameraStream {
   [[nodiscard]] int camera_width() const { return width_; }
   [[nodiscard]] int camera_height() const { return height_; }
   static std::optional<std::string> GetFilePathForPicture();
-  [[nodiscard]] std::string takePicture() const;
+  [[nodiscard]] std::string takePicture();
 
  private:
   // PipeWire objects
@@ -94,10 +92,8 @@ class CameraStream {
   std::unique_ptr<flutter::GpuSurfaceTexture> gpu_surface_texture;
   FlutterDesktopGpuSurfaceDescriptor descriptor{};
 
-  // Decoded buffer + sync
+  // Decoded frame buffer — used only for the legacy YUV2/MJPEG paths.
   std::unique_ptr<uint8_t[]> decoded_buffer_;
-  std::mutex frame_mutex_;
-  std::atomic<bool> new_frame_available_{false};
 
   // Dimensions
   int width_ = 640;
